@@ -36,22 +36,32 @@ public class Main {
         Connection connection;
         connection = DBEngine.getOracleConnection();
         Boolean verbose = true;
-        Statement statement = null;
-        ArrayList<String> campiCluster = new ArrayList<String>();
-        Hashtable<String, Hashtable<String, String>> recordMap = new Hashtable<String, Hashtable<String, String>>();      
+        Boolean ramLoad = false;
+
+        Hashtable<String, Hashtable<String, String>> recordMap = new Hashtable<String, Hashtable<String, String>>();
+        /* questa variabile controlla il caricamento della fonte dati:
+                    se TRUE , carica tutta la tabella in memoria centrale
+                    se FALSE , accede ogni volta ai dati del supporto in memoria secondaria
+        */
+        
         if (connection != null) {
             System.out.println("Connessione OK!");
             System.out.println("---------------------------------");
             System.out.println("1. Elenco campi tabella sorgente");
-            Cluster.stampaCampiSorgente(connection, verbose);
+            Cluster.printSourceFields(connection, verbose);
             //Cluster.stampaCampiCluster(connection, verbose);
             System.out.println("---------------------------------");
+            /* questa parte di codice richiama un metodo per l'acquisizione di tutti i dati in memoria centrale */
             System.out.println("2. Acquisizione campi-valori in mappa");
-            recordMap = Cluster.popolaMappaRecord(connection, verbose);
+            if (ramLoad) recordMap = Cluster.populateRecordMap(connection, verbose);
+            else                     Cluster.populateRowidsHashtable(connection, verbose);
+                  
             //campiCluster = createCampiCluster(connection, verbose);
             System.out.println("---------------------------------");
             System.out.println("3. Ricerca similarità");
-            Cluster.findSimilarity(recordMap);
+            if (ramLoad) Cluster.findSimilarity(recordMap, verbose);
+            else         Cluster.findSimilarity(connection);
+            
               
         }
         else {
