@@ -32,26 +32,7 @@ public class DBEngine {
 
 //private  static String dbAddress = "jdbc:oracle:thin:@prd-arpa-odb01.arpa.piemonte.it:1521:SDEAGS";
         
-        /* ATTENZIONE!! TNS PROD, NON UTILIZZARE
-        private  static String dbAddress = "jdbc:oracle:thin:@(description=(address=(protocol=tcp)(host=prd-arpa-odb01.arpa.piemonte.it)(port=1521))(connect_data=(service_name=sdeagspdb)))";
-	private  static String username = "APM_GSTANAGARPA_GW";
-	private  static  String password = "T68YzQZyKYhkwZcG5jK9";
-        */
-        
-        
-        private  static String dbAddress = "jdbc:oracle:thin:@"
-                + "(DESCRIPTION = "
-                + "     (ADDRESS = (PROTOCOL = TCP)(HOST = a-topio-sr60.arpa.piemonte.it)(PORT = 1521)) "
-                + "     (CONNECT_DATA =(SERVER = DEDICATED)(SERVICE_NAME = sdearch))"
-                + ")";
-        
-        
-	private  static String username = "APM_GSTANAGARPA_GW";
-	private  static  String password = "APM_GSTANAGARPA_GW";
-        
-//      private static final String dbAddress = "jdbc:oracle:thin:@laboracle.educ.di.unito.it:1521:oralab";
-//      private static final String username = "sp127567";
-//      private static final String password = "password";
+
 	
 	private  DBEngine dbe;
 	
