@@ -30,9 +30,13 @@ public class DBEngine {
 	private  static Connection conn;
 	private  Statement stmt;
 
-//private  static String dbAddress = "jdbc:oracle:thin:@prd-arpa-odb01.arpa.piemonte.it:1521:SDEAGS";
+                  
         
-
+        
+        
+//      private static final String dbAddress = "jdbc:oracle:thin:@laboracle.educ.di.unito.it:1521:oralab";
+//      private static final String username = "sp127567";
+//      private static final String password = "password";
 	
 	private  DBEngine dbe;
 	
