@@ -34,7 +34,11 @@ public class Cluster {
     private static Statement statement;
     private static Hashtable< Integer , String> rowidMap;
     private static Hashtable< String, Integer> rowidMapReverse;
+    private static Hashtable<String, Hashtable<String, String>> recordMap;
+    
     private static final int targetDist = 2; // distanza cluster
+    private static final Boolean ramLoad = true;
+    private static final Boolean verbose = true;
     private static final String numrow = "10";
     private static final String method = "OPTRET"; 
                                 // ottimizzazione: 
@@ -91,6 +95,12 @@ public class Cluster {
                         "rowid like 'AAASAOAAIAAAAE8AAF' or " +
                         "rowid like 'AAASAOAAIAAAAE8AAG' ) " ;*/
     
+    
+    public static void populateAuxiliaryStructures(Connection connection) throws SQLException {    
+        if (ramLoad) Cluster.populateRecordMap(connection);
+        else         Cluster.populateRowidsHashtable(connection);
+    }
+    
     /**
     *
     * @author diego
@@ -128,17 +138,15 @@ public class Cluster {
     popola le seguenti strutture dati:
         recordMap       - mappa tutti i record della tabella in memoria centrale
         rowidMap        - mappa un id intero 1-n con un rowid 
-        rowidMapReverse - mappa un rowid con un intero 1-n
-        
-    restituisce recordMap
+        rowidMapReverse - mappa un rowid con un intero 1-n        
     */
-    public static Hashtable<String, Hashtable<String, String>> populateRecordMap(Connection connection, Boolean verbose) throws SQLException {
+    public static void populateRecordMap(Connection connection) throws SQLException {
         boolean verboseLocal = false;
         Enumeration names;
         Enumeration rowids;
         String key;  
         String rid = null;        
-        Hashtable<String, Hashtable<String, String>> recordMap = new Hashtable<String, Hashtable<String, String>>();      
+        recordMap = new Hashtable<String, Hashtable<String, String>>();      
         rowidMap = new Hashtable< Integer , String>();
         rowidMapReverse = new Hashtable< String, Integer>();            
         try {
@@ -241,7 +249,7 @@ public class Cluster {
                 statement.close();
             }      
         }               
-        return recordMap;
+        
     }
   
     
@@ -251,7 +259,7 @@ public class Cluster {
             rowidMapReverse - mappa un rowid con un intero 1-n
 
     */
-    public static void populateRowidsHashtable(Connection connection, Boolean verbose) throws SQLException {
+    public static void populateRowidsHashtable(Connection connection) throws SQLException {
         boolean verboseLocal = false;
         
 
@@ -320,485 +328,8 @@ public class Cluster {
             }      
         }                       
     }
-      
-/*
-    riceve in ingresso recordMap e misura la similarità tra gli elemenenti in essa contenuti
-    (ramLoad = TRUE)
- */  
-        public static int [][] findSimilarity(Hashtable<String, Hashtable<String, String>> recordMap, boolean verbose) throws SQLException {
-  
-        boolean verboseLocal = false;    
-        Enumeration names;
-        Enumeration rowids;
-        String key;  
-        String rid = null;        
-       
-        //rowidMap 
-        //rowidMapReverse
-
-        
-        // devo popolare una matrice i,j i cui elementi sono il risultato del controllo di similarità tra i record
-        // aventi rowid - > i,j  corrispondenti
-        // dichiaro la matrice
-        
-        int i,j;
-        int maxElem = rowidMap.size();
-
-        int similarityBase [][] = new int[maxElem+1][maxElem+1];
-        int similarityCluster [][] = new int[maxElem+1][maxElem+1];
-        int similarityClusterOpt [][] = new int[maxElem+1][maxElem+1];
-        int similarityOptimized [][] = new int[maxElem+1][maxElem+1];
-        boolean[][] similarityOptLBCheck = new boolean[maxElem+1][maxElem+1];
-        boolean[][] similarityOptUBCheck = new boolean[maxElem+1][maxElem+1];
-        for (i = 1; i <= maxElem; i++ ) {            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                similarityOptLBCheck [i][j] = false;
-            }
-        }
-        for (i = 1; i <= maxElem; i++ ) {            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                similarityOptUBCheck [i][j] = false;
-            }
-        }
-        int counter;
-        String rowidA, rowidB;
-        Enumeration fieldsA;
-        Enumeration fieldsB;
-        int dist = 0;
-        int maxDist = 0;
-        int LBDist = 0;        
-        boolean calculateDist = true;
-        int numeroCalcoli = 0;
-        for (i = 1; i <= maxElem; i++ ) {
-            rowidA = rowidMap.get(i);            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                rowidB = rowidMap.get(j);
-                Hashtable<String, String> hashtableA = recordMap.get(rowidA);                
-                Hashtable<String, String> hashtableB = recordMap.get(rowidB);
-                maxDist = hashtableA.size();
-                fieldsA = hashtableA.keys();         
-                if(verbose&&verboseLocal) System.out.println("[findSimilarity]-->"+i+"  "+j);                
-                if (method.compareTo("OPT")==0){
-                    calculateDist = false;                    
-                    //ottimizzazione (se le distanze della riga 1 sono già state calcolate...
-                    if (i>1){                         
-                        // caso 1: verifico che d12 non sia approssimato...           
-                        if (!similarityOptLBCheck[i-1][j-1]){
-                            LBDist = similarityOptimized[i-1][j]-similarityOptimized[i-1][j-1];
-                            // verifico se  d23 >= d13-d12>soglia
-                            if (LBDist > targetDist && !similarityOptLBCheck [i-1][j-1]){                                
-                                similarityOptimized[i][j] = LBDist;
-                                //similarityOptimized[j][i] = LBDist; 
-                                similarityOptLBCheck [i][j] = true;
-                                if ((targetDist - LBDist)>=0){                                
-                                    similarityClusterOpt[i][j] = 1;
-                                }
-                            }
-                            else {                                
-                                LBDist = similarityOptimized[i-1][j-1]-similarityOptimized[i-1][j];
-                                if (LBDist > targetDist && !similarityOptLBCheck [i-1][j]){
-                                    similarityOptimized[i][j] = LBDist; 
-                                    //similarityOptimized[j][i] = LBDist; 
-                                    similarityOptLBCheck [i][j] = true;
-                                    if ((targetDist - LBDist)>=0){                                
-                                        similarityClusterOpt[i][j] = 1;
-                                    }
-                                }                                
-                                else {
-                                    calculateDist = true;                          
-                                }                                
-                            }
-                        }
-                        else {
-                            if (!similarityOptLBCheck[i-1][j]){
-                                LBDist = similarityOptimized[i-1][j-1]-similarityOptimized[i-1][j];
-                                if (LBDist > targetDist){
-                                    similarityOptimized[i][j] = LBDist; 
-                                    //similarityOptimized[j][i] = LBDist; 
-                                    similarityOptLBCheck [i][j] = true;
-                                    if ((targetDist - LBDist)>=0){                                
-                                        similarityClusterOpt[i][j] = 1;
-                                    }
-                                }
-                                else {
-                                    calculateDist = true;
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        calculateDist = true;
-                    }                
-                }                
-                if (calculateDist){
-                    //System.out.println("confronto campi :  elemA["+i+"]["+rowidA+"], elemB["+j+"]["+rowidB+"]  similarity: "+similarityBase[i][j]);
-                    counter = 1;                    
-                    while(fieldsA.hasMoreElements()) {
-                        key = (String) fieldsA.nextElement();
-                        //System.out.println("confronto: chiave(A): " +key+ "  valore(A): " + hashtableA.get(key)+ "  con chiave(B): " +key+ "  valore(B): " + hashtableB.get(key));
-                        Object elemA = hashtableA.get(key);
-                        Object elemB = hashtableB.get(key);
-                        if (elemA.equals(elemB)){
-                            dist = maxDist-counter;                            
-                            if (method.compareTo("OPT")==0){
-                                if (calculateDist){
-                                    similarityOptimized[i][j] = dist;
-                                    //similarityOptimized[j][i] = dist; 
-                                }
-                            }
-                            else {
-                                similarityBase[i][j] = dist;
-                                //similarityBase[j][i] = dist;    
-                            }                                
-                            counter++;
-                            if ((targetDist - dist)>=0){                                
-                                if (method.compareTo("OPT")==0){
-                                    similarityClusterOpt[i][j] = 1;
-                                }
-                                else {
-                                    similarityCluster[i][j] = 1;
-                                }
-                                    
-                            }
-                        }
-                    }
-                    numeroCalcoli++;
-                }
-            }            
-        } 
-        printResults( recordMap, verbose,  similarityBase, similarityOptimized ,  similarityCluster ,  similarityClusterOpt ,  maxElem,  numeroCalcoli );
-        return similarityBase;
-    }
-        
-    
-    // printResults : stampa risultati, caso ramLoad = TRUE;    
-    public static void printResults(Hashtable<String, Hashtable<String, String>> recordMap, boolean verbose, int similarityBase[][], int similarityOptimized [][], int similarityCluster [][], int similarityClusterOpt [][], int maxElem, int numeroCalcoli ) throws SQLException {    
-        
-        int i, j;
-        if (method.compareTo("BASE")==0)printMatrix(similarityBase, maxElem, "BASE, NO OPTIMIZATION");
-        if (method.compareTo("OPT")==0) printMatrix(similarityOptimized, maxElem, "OPTIMIZED");
-        if (method.compareTo("BASE")==0)printMatrix(similarityCluster, maxElem, "BASE CLUSTER");
-        if (method.compareTo("OPT")==0) printMatrix(similarityClusterOpt, maxElem, "OPTIMIZED CLUSTER");
-        if (method.compareTo("BASE")==0) {
-            System.out.println("[findSimilarity] ---------------------------------");
-            System.out.println("[findSimilarity] Cluster :");
-            System.out.println("[findSimilarity] ---------------------------------");
-            for (i = 1; i <= maxElem; i++ ) {                      
-                for (j = 1 + i; j <= maxElem; j++ ) {     
-                    if (similarityCluster[i][j] == 1){
-                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(i)+ " val: "+recordMap.get(rowidMap.get(i)).toString());
-                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(j)+ " val: "+recordMap.get(rowidMap.get(j)).toString());
-                        //System.out.println(recordMap.get(rowidMap.get(i)).toString());
-                        //System.out.println(recordMap.get(rowidMap.get(j)).toString());
-                    }
-                }
-                //System.out.println();
-            }
-        }
-        if (method.compareTo("OPT")==0) {
-            System.out.println("[findSimilarity] ---------------------------------");
-            System.out.println("[findSimilarity] Optimized cluster :");
-            System.out.println("[findSimilarity] ---------------------------------");
-            for (i = 1; i <= maxElem; i++ ) {                      
-                for (j = 1 + i; j <= maxElem; j++ ) {     
-                    if (similarityClusterOpt[i][j] == 1){
-                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(i)+ " val: "+recordMap.get(rowidMap.get(i)).toString());
-                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(j)+ " val: "+recordMap.get(rowidMap.get(j)).toString());
-                        //System.out.println(recordMap.get(rowidMap.get(i)).toString());
-                        //System.out.println(recordMap.get(rowidMap.get(j)).toString());
-                    }
-                }
-                //System.out.println();
-            }
-        }
-        System.out.println("[findSimilarity] ---------------------------------");
-        System.out.println("[findSimilarity] N. of calc.: "+numeroCalcoli);
-        System.out.println("[findSimilarity] ---------------------------------");
-        
-    }
-    
-        
-        
-   /* ramLoad = FALSE */     
-    public static int [][] findSimilarity(Connection connection) throws SQLException {  
-        boolean verboseLocal = true;
-        Enumeration names;
-        Enumeration rowids;
-        String key;  
-        String rid = null; 
-               
-        //rowidMap 
-        //rowidMapReverse       
-        // devo popolare una matrice i,j i cui elementi sono il risultato del controllo di similarità tra i record
-        // aventi rowid - > i,j  corrispondenti
-        // dichiaro la matrice
-        
-        int i,j;
-        int maxElem = rowidMap.size();
-        /* FIXME: targetDist è la distanza target su cui classificare, elevarla a variabile perlomeno static #####*/
-        int targetDist = 2;
-        int[][] similarityDistances = new int[maxElem+1][maxElem+1];
-        int[][] similarityCluster    = new int[maxElem+1][maxElem+1];
-        boolean[][] similarityApproximate    = new boolean[maxElem+1][maxElem+1];
-
-        
-        int [][] similarityLB = new int[maxElem+1][maxElem+1];
-        int [][] similarityUB = new int[maxElem+1][maxElem+1];
-        boolean[][] similarityOptMTCheck = new boolean[maxElem+1][maxElem+1];
-        boolean[][] similarityOptLBCheck = new boolean[maxElem+1][maxElem+1];
-        boolean[][] similarityOptUBCheck = new boolean[maxElem+1][maxElem+1];
-        for (i = 1; i <= maxElem; i++ ) {            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                similarityApproximate [i][j] = false;
-            }
-        }
-        for (i = 1; i <= maxElem; i++ ) {            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                similarityOptMTCheck [i][j] = false;
-            }
-        }        
-        for (i = 1; i <= maxElem; i++ ) {            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                similarityOptLBCheck [i][j] = false;
-            }
-        }
-        for (i = 1; i <= maxElem; i++ ) {            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                similarityOptUBCheck [i][j] = false;
-            }
-        }
-        int counter;
-        String rowidA, rowidB;
-        Enumeration fieldsA;
-        Enumeration fieldsB;
-        int dist = 0;
-        int maxDist = 0;
-        int LBDist = 0;
-        int LBDist1 = 0;
-        int LBDist2 = 0;
-        int UBDist = 0;
-        int LBMax = 0;
-        boolean calculateDist = true;
-        int numeroCalcoli = 0;        
-        Boolean verbose = true;
-        for (i = 1; i <= maxElem; i++ ) {
-            rowidA = rowidMap.get(i);            
-            for (j = 1 + i; j <= maxElem; j++ ) {
-                rowidB = rowidMap.get(j);                         
-                if(verbose&&verboseLocal) System.out.println("[findSimilarity]-->"+i+"  "+j);                
-                if (method.compareTo("OPT")==0){
-                    calculateDist = false;
-                    //ottimizzazione (se le distanze della riga 1 sono già state calcolate...
-                    if (i>1){                         
-                        // caso 1: verifico che d12 non sia approssimato...           
-                        if (!similarityOptLBCheck[i-1][j-1]){
-                            LBDist = similarityDistances[i-1][j]-similarityDistances[i-1][j-1];
-                            // verifico se  d23 >= d13-d12>soglia
-                            if (LBDist > targetDist && !similarityOptLBCheck [i-1][j-1]){                                
-                                similarityDistances[i][j] = LBDist;
-                                //similarityOptimized[j][i] = LBDist; 
-                                similarityOptLBCheck [i][j] = true;
-                                if ((targetDist - LBDist)>=0){                                
-                                    similarityCluster[i][j] = 1;
-                                }
-                            }
-                            else {                                
-                                LBDist = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
-                                if (LBDist > targetDist && !similarityOptLBCheck [i-1][j]){
-                                    similarityDistances[i][j] = LBDist; 
-                                    //similarityOptimized[j][i] = LBDist; 
-                                    similarityOptLBCheck [i][j] = true;
-                                    if ((targetDist - LBDist)>=0){                                
-                                        similarityCluster[i][j] = 1;
-                                    }
-                                }                                
-                                else {
-                                    calculateDist = true;                          
-                                }                                
-                            }
-                        }
-                        else {
-                            if (!similarityOptLBCheck[i-1][j]){
-                                LBDist = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
-                                if (LBDist > targetDist){
-                                    similarityDistances[i][j] = LBDist; 
-                                    //similarityOptimized[j][i] = LBDist; 
-                                    similarityOptLBCheck [i][j] = true;
-                                    if ((targetDist - LBDist)>=0){                                
-                                        similarityCluster[i][j] = 1;
-                                    }
-                                }
-                                else {
-                                    calculateDist = true;
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        calculateDist = true;
-                    }                
-                }
-                else {
-                    if (method.compareTo("OPTRET")==0) {
-                        //if(verbose&&verboseLocal) System.out.println("[findSimilarity] OPTRET");    
-                        calculateDist = false;
-                        
-                        if (i>1){                         
-                            // caso 1: verifico che d13 non sia approssimato...  
-                            if (similarityApproximate[i-1][j]){  
-                                // lo è, uso LB[i-1][j]                                
-                                LBDist1 = similarityLB[i-1][j]-similarityDistances[i-1][j-1];
-                            }
-                            else {
-                                // verifico se è approssimata d12   
-                                if (similarityApproximate[i-1][j-1]){  
-                                    //  lo è, uso UB[i-1][j-1]  
-                                    LBDist1 = similarityDistances[i-1][j]-similarityUB[i-1][j-1];
-                                }
-                                else {
-                                    LBDist1 = similarityDistances[i-1][j]-similarityDistances[i-1][j-1];
-                                }
-                                    
-                            }
-                            if (similarityApproximate[i-1][j]){  
-                                // lo è, uso LB[i-1][j]                                
-                                LBDist2 = similarityDistances[i-1][j-1]-similarityLB[i-1][j];
-                            }
-                            else {
-                                // verifico se è approssimata d12   
-                                if (similarityApproximate[i-1][j-1]){  
-                                    //  lo è, uso UB[i-1][j-1]  
-                                    LBDist2 = similarityUB[i-1][j-1]-similarityDistances[i-1][j];
-                                }
-                                else {
-                                    LBDist2 = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
-                                }                                    
-                            }
-                            if (LBDist1>=LBDist2) {
-                                LBMax = LBDist1;
-                            }
-                            else {
-                                LBMax = LBDist2;
-                            }
-                            //Se LB' è maggiore...aggiorno matrice LB
-                            if (LBMax > similarityLB[i][j]) similarityLB[i][j] = LBMax;
-                                                                
-                            // per d13+d12: se approssimata uno dei due addendi, considero l'UB...
-                            if (similarityApproximate[i-1][j]||similarityApproximate[i-1][j-1]){  
-                                // lo è, uso LB[i-1][j]                                
-                                UBDist = similarityUB[i-1][j-1]+similarityUB[i-1][j];
-                            }
-                            else {                                                                   
-                                UBDist = similarityDistances[i-1][j-1]+similarityDistances[i-1][j];                                
-                            }
-                            
-                            //Se UB' è minore ...aggiorno matrice UB
-                            if (UBDist < similarityUB[i][j]) similarityUB[i][j] = UBDist;
-                            if (similarityLB[i][j]==similarityUB[i][j]) {
-                                similarityDistances[i][j] = similarityLB[i][j];
-                                similarityApproximate[i][j] = true;
-                            }
-                            if (similarityLB[i][j]<similarityUB[i][j])  calculateDist = true;   
-                            
-                            
-                            
-                                
-                            
-                               
-                        }
-                        else {
-                            calculateDist = true;
-                        }  
-                        
-                    }
-                }
-                
-                
-                
-                if (calculateDist){
-                    //System.out.println("confronto campi :  elemA["+i+"]["+rowidA+"], elemB["+j+"]["+rowidB+"]  similarity: "+similarityBase[i][j]);
-                    counter = 0;                       
-                    Hashtable<String, String> hashtableA = Cluster.getRecordByRowid(connection, verbose, rowidA);                
-                    Hashtable<String, String> hashtableB = Cluster.getRecordByRowid(connection, verbose, rowidB);
-                    maxDist = hashtableA.size();
-                    fieldsA = hashtableA.keys();
-                    while(fieldsA.hasMoreElements()) {
-                        key = (String) fieldsA.nextElement();                       
-                        Object elemA = hashtableA.get(key);
-                        Object elemB = hashtableB.get(key);
-                        if (elemA.equals(elemB)){
-                            counter++;
-                        }
-                    }
-                    dist = maxDist-counter;                            
-                                          
-                    similarityDistances[i][j] = dist;                                        
-                    //similarityOptimized[j][i] = dist; 
-                    similarityApproximate[i][j] = false;
-                    /*
-                    if (method.compareTo("OPTRET")==0&&i==1) {
-                        similarityUB[i][j] = dist;
-                        similarityLB[i][j] = dist;
-                    }*/
-                    
-                                                  
-                    if ((targetDist - dist)>=0){                                                        
-                        similarityCluster[i][j] = 1;                                                         
-                    }
-                    numeroCalcoli++;
-                    if(verbose&&verboseLocal) System.out.println("[findSimilarity] CALC=YES");
-                }
-                else  {
-                    if(verbose&&verboseLocal) System.out.println("[findSimilarity] CALC=NO");
-                }
-            }            
-        }   
-        
-;
-        if (method.compareTo("BASE")==0)    printResults("BASE, NO OPTIMIZATION", connection, verbose,  similarityDistances,   similarityCluster ,  maxElem,  numeroCalcoli );
-        if (method.compareTo("OPT")==0)     printResults("PARTIAL (UPPER BOUND ONLY)", connection, verbose,  similarityDistances,   similarityCluster ,  maxElem,  numeroCalcoli );
-        if (method.compareTo("OPTRET")==0) {
-            //printMatrix(similarityApproximate, maxElem, "LATE CALC METHOD (LB+UB)");
-            printMatrix(similarityLB, maxElem, "LATE CALC METHOD (LB+UB)");
-            printMatrix(similarityUB, maxElem, "LATE CALC METHOD (LB+UB)");        
-            printResults("LATE CALC OPTIMIZATION (UB+LB)", connection, verbose,  similarityDistances,   similarityCluster ,  maxElem,  numeroCalcoli );
-        }
-        return similarityDistances;
-    }
-
-    
-    // printResults : stampa risultati, caso ramLoad = FALSE;
-    public static void printResults(String methodTitle, Connection connection, boolean verbose, int[][] similarityDistances,  int similarityCluster [][], int maxElem, int numeroCalcoli ) throws SQLException {    
-        
-        int i, j;
-
-        printMatrix(similarityDistances, maxElem, methodTitle);
-        printMatrix(similarityCluster, maxElem, methodTitle);
-
-
-        System.out.println("[printResults] ---------------------------------");
-        System.out.println("[printResults] Cluster :");
-        System.out.println("[printResults] ---------------------------------");
-        for (i = 1; i <= maxElem; i++ ) {                      
-            for (j = 1 + i; j <= maxElem; j++ ) {     
-                if (similarityCluster[i][j] == 1){
-                    System.out.println("[printResults] i,j: "+i+","+j+"rowid: "+rowidMap.get(i)+ " val: "+getRecordByRowid(connection, verbose, rowidMap.get(i)).toString());
-                    System.out.println("[printResults] i,j: "+i+","+j+"rowid: "+rowidMap.get(j)+ " val: "+getRecordByRowid(connection, verbose, rowidMap.get(j)).toString());
-                    //System.out.println(recordMap.get(rowidMap.get(i)).toString());
-                    //System.out.println(recordMap.get(rowidMap.get(j)).toString());
-                }
-            }
-            //System.out.println();
-        }
-
-        System.out.println("[printResults] ---------------------------------");
-        System.out.println("[printResults] N. of calc.: "+numeroCalcoli);
-        System.out.println("[printResults] ---------------------------------");
-        
-    }
-    
-    
-    public static Hashtable<String, String> getRecordByRowid(Connection connection, Boolean verbose, String rowid) throws SQLException {
+           
+    public static Hashtable<String, String> getRecordByRowid(Connection connection, String rowid) throws SQLException {
         boolean verboseLocal = false;
         String selectTableSQL = "select " +
                         "ROWID\n" +
@@ -916,8 +447,11 @@ public class Cluster {
         System.out.println("contenuto matrice: "+title);
         System.out.println("---------------------------------");
         for (i = 1; i <= maxElem; i++ ) {                      
-            for (j = 1; j <= maxElem; j++ ) {                       
-                System.out.print("["+matrix[i][j]+"]");                                 
+            for (j = 1; j <= maxElem; j++ ) {   
+                
+                System.out.print("[");
+                if (matrix[i][j]<=9) System.out.print(" "); 
+                System.out.print(matrix[i][j]+"]");                                 
             }
             System.out.println();
         }
@@ -971,51 +505,481 @@ public class Cluster {
             }
         }         
     }        
-                        
-    private static TreeMap<String, Integer> addLexiconSourcesToDictKeywordSetWithOccurrences(TreeMap<String, Integer> dict, Connection connection, String selectTableSQL, Boolean verbose) throws SQLException {               
-        boolean verboseLocal = false;
-        try {
-            Statement statement = connection.createStatement();
-            if(verbose&&verboseLocal) System.out.println(selectTableSQL);
-            // esegue lo statement SQL 
-            ResultSet rs = statement.executeQuery(selectTableSQL);
+   
+    
+/* ramLoad = TRUE */     
+    public static int [][] findSimilarity(Connection connection) throws SQLException {
+        boolean verboseLocal = true;
+        Enumeration names;
+        Enumeration rowids;
+        String key;  
+        String rid = null; 
+               
+        //rowidMap 
+        //rowidMapReverse       
+        // devo popolare una matrice i,j i cui elementi sono il risultato del controllo di similarità tra i record
+        // aventi rowid - > i,j  corrispondenti
+        // dichiaro la matrice
+        
+        int i,j,k;
+        int maxElem = rowidMap.size();
+        /* FIXME: targetDist è la distanza target su cui classificare, elevarla a variabile perlomeno static #####*/
+        int targetDist = 2;
+        int[][] similarityDistances = new int[maxElem+1][maxElem+1];
+        int[][] similarityCluster    = new int[maxElem+1][maxElem+1];
+        boolean[][] similarityApproximate    = new boolean[maxElem+1][maxElem+1];
 
-            //inizializzo strutture per indice keyword sentimento (dizionario)...
-            //TreeMap<String, Integer> dictKeywordSetWithOccurrences = new TreeMap<String, Integer>();
-            while (rs.next()) {
-
-                String id = rs.getString("ID");
-                String word = rs.getString("WORD").toLowerCase();
-                if (verbose){
-                    if(verbose&&verboseLocal) System.out.println("id : " + id);
-                    if(verbose&&verboseLocal) System.out.println("word : " + word);
-                }                                      
-                /*
-                implementazione stemmer, non utilizzato:
-                Stemmer s = new Stemmer();   
-                String stemma = s.stem(word);
-                if (verbose){
-                    System.out.println("Lemma stemmizzato: "+stemma);            
-                    System.out.println("-----------------------------------------");
-                    System.out.println("[addLexiconSourcesToDictKeywordSetWithOccurrences]:");
-                }*/
-                if (!dict.containsKey(word)) {
-                    dict.put(word, 1);
-                } 
+        int [][] similarityLB = new int[maxElem+1][maxElem+1];
+        int [][] similarityUB = new int[maxElem+1][maxElem+1];
+        
+        for (i = 1; i <= maxElem; i++ ) {            
+            for (j = 1 + i; j <= maxElem; j++ ) {
+                similarityApproximate [i][j] = true;
+            }
+        }
+         
+        int counter;
+        String rowidA, rowidB;
+        Enumeration fieldsA;
+        Enumeration fieldsB;
+        int dist = 0;
+        int maxDist = 0;
+        int LBDist = 0;
+        int LBDist1 = 0;
+        int LBDist2 = 0;
+        int UBDist = 0;
+        int LBMax = 0;
+        boolean calculateDist = true;
+        int numeroCalcoli = 0; 
+        int numberOfSimilarity = 0;
+        Hashtable<String, String> hashtableA;                
+        Hashtable<String, String> hashtableB;
+        if (method.compareTo("OPTRET")==0){
+            i = 1;
+            rowidB = rowidMap.get(i);
+            for (j = 1; j <=maxElem; j++ ) {
+                rowidA = rowidMap.get(j);
+                counter = 0;   
+                if (ramLoad) {
+                    hashtableA = recordMap.get(rowidA);                
+                    hashtableB = recordMap.get(rowidB);
+                }
                 else {
-                    dict.put(word, dict.get(word) + 1);
+                    hashtableA = Cluster.getRecordByRowid(connection,  rowidA);                
+                    hashtableB = Cluster.getRecordByRowid(connection,  rowidB);
+                }
+                maxDist = hashtableA.size();
+                fieldsA = hashtableA.keys();
+                while(fieldsA.hasMoreElements()) {
+                    key = (String) fieldsA.nextElement();                       
+                    Object elemA = hashtableA.get(key);
+                    Object elemB = hashtableB.get(key);
+                    if (elemA.equals(elemB)){
+                        counter++;
+                    }
+                }
+                dist = maxDist-counter;       
+                 if(verbose&&verboseLocal) System.out.println("[findSimilarity] scrivo DIST = "+dist);
+                similarityDistances[i][j] = dist;                                        
+              
+                similarityApproximate[i][j] = false;          
+                similarityUB[i][j] = dist;
+                similarityLB[i][j] = dist;         
+                if ((targetDist - dist)>=0){                                                        
+                    similarityCluster[i][j] = 1;                                                         
+                }
+                numeroCalcoli++;    
+            }
+           
+
+            for (i = 1; i <= maxElem; i++ ) {
+                if (i>1){
+                    rowidA = rowidMap.get(i);                                            
+                    int h=0;
+                    for (j = 1 + i; j<=maxElem; j++){ 
+                        h++;
+                        int maxElemRiga = maxElem-j;                        
+                        for (k = j-h; k<=maxElem; k++){
+                            if (k!=j-1){
+                                if(verbose&&verboseLocal) System.out.println("[findSimilarity] ELEMENTI-->("+(i-1)+", "+(k)+") - ("+(i-1)+", "+(j-1)+"), ("+i+"), ("+j+")");
+                                
+                                rowidB = rowidMap.get(j);                         
+
+                                calculateDist = false;
+
+                                if (similarityApproximate[i-1][k]){
+                                    LBDist1 = similarityLB[i-1][k]-similarityDistances[i-1][j-1];    
+                                }
+                                else {
+                                    if (similarityApproximate[i-1][j-1]){
+                                        LBDist1 = similarityDistances[i-1][k]-similarityUB[i-1][j-1];    
+                                    }
+                                    else LBDist1 = similarityDistances[i-1][k]-similarityDistances[i-1][j-1];  
+                                }
+
+                                if (similarityApproximate[i-1][j-1]){
+                                    LBDist2 = similarityLB[i-1][j-1]-similarityDistances[i-1][k];
+                                }
+                                else {
+                                    if (similarityApproximate[i-1][k]){
+                                        LBDist2 = similarityDistances[i-1][j-1]-similarityUB[i-1][k];
+                                    }
+                                    else LBDist2 = similarityDistances[i-1][j-1]-similarityDistances[i-1][k]; 
+                                }
+
+
+                                if (LBDist1>=LBDist2) {
+                                    LBMax = LBDist1;
+                                }
+                                else {
+                                    LBMax = LBDist2;
+                                }
+                                    
+
+
+                                // per d13+d12: se approssimata uno dei due addendi, considero l'UB...                                                                  
+                                if (similarityApproximate[i-1][k]||similarityApproximate[i][j-1]){
+                                    UBDist = similarityUB[i-1][j-1]+similarityUB[i-1][k];
+                                }
+                                else UBDist = similarityDistances[i-1][j-1]+similarityDistances[i-1][k];
+
+
+
+                                //Se LB' è maggiore...aggiorno matrice LB
+                                if (LBMax > similarityLB[i][j]){
+                                    similarityLB[i][j] = LBMax;                                
+                                }
+                                if (LBMax > targetDist) {
+                                    similarityDistances[i][j] = LBMax;
+                                    similarityApproximate[i][j] = true;
+                                }
+
+                                if (UBDist < similarityUB[i][j] ) {
+                                    similarityUB[i][j] = UBDist;
+                                    similarityDistances[i][j] = UBDist;
+                                    similarityApproximate[i][j] = true;
+
+
+                                }
+                                if (similarityUB[i][j] == 0) {
+                                    similarityUB[i][j] = UBDist;
+
+                                }
+                                if(verbose&&verboseLocal) System.out.println("[findSimilarity] LBDist1 = "+ LBDist1 + ", LBDist2 = "+ LBDist2+ ", LBMax = "+ LBMax + ", UBDist = "+UBDist+ ",LB matrix = "+similarityLB[i][j]+", UB matrix = "+similarityUB[i][j]); 
+                                   //Se UB' è minore ...aggiorno matrice UB
+                                /*                                                        
+                                if (similarityLB[i][j]==similarityUB[i][j]) {
+                                    similarityDistances[i][j] = similarityLB[i][j];
+                                    similarityApproximate[i][j] = true;
+                                }
+                                if (similarityLB[i][j]<similarityUB[i][j])  calculateDist = true;    
+                                */                                                                                                                                                                              
+                            } 
+                        }
+                        for (j = 1 + i; j<=maxElem; j++){ 
+                            rowidB = rowidMap.get(j);  
+                            if (similarityLB[i][j]==similarityUB[i][j]) {
+                                similarityDistances[i][j] = similarityLB[i][j];
+                                similarityApproximate[i][j] = true;
+                                calculateDist = false;
+                            }
+                            if (similarityLB[i][j]<similarityUB[i][j])  calculateDist = true;
+
+                            if (calculateDist){
+                                //System.out.println("confronto campi :  elemA["+i+"]["+rowidA+"], elemB["+j+"]["+rowidB+"]  similarity: "+similarityBase[i][j]);
+                                counter = 0; 
+                                if (ramLoad) {
+                                    hashtableA = recordMap.get(rowidA);                
+                                    hashtableB = recordMap.get(rowidB);
+                                }
+                                else {
+                                    hashtableA = Cluster.getRecordByRowid(connection, rowidA);                
+                                    hashtableB = Cluster.getRecordByRowid(connection, rowidB);
+                                }
+                                maxDist = hashtableA.size();
+                                fieldsA = hashtableA.keys();
+                                while(fieldsA.hasMoreElements()) {
+                                    key = (String) fieldsA.nextElement();                       
+                                    Object elemA = hashtableA.get(key);
+                                    Object elemB = hashtableB.get(key);
+                                    if (elemA.equals(elemB)){
+                                        counter++;
+                                    }
+                                }
+                                dist = maxDist-counter;                            
+
+                                similarityDistances[i][j] = dist;                                        
+
+                                similarityApproximate[i][j] = false;
+
+
+
+
+                                if ((targetDist - dist)>=0){                                                        
+                                    similarityCluster[i][j] = 1; 
+                                    numberOfSimilarity++;
+                                }
+                                numeroCalcoli++;
+                                if(verbose&&verboseLocal) {
+                                    System.out.println("[findSimilarity] CALC=YES");
+                                }
+                            }                                
+                        }                                                
+                    }              
                 }
             }
-            //System.out.println("Indice anger da dizionario: " + dict.toString());        
-        } catch (SQLException e) {
-            System.out.println(e.getMessage());                  
-        } finally {      
-            if (statement != null) {
-                statement.close();
-            }      
-        }  
-        return dict;
+                                                          
+            for (i = 1; i >= maxElem; i++ ) {
+                rowidA = rowidMap.get(i);                                                            
+                for (j = 1 + i; j<=maxElem; j++){ 
+                    if (i>1){
+                    rowidB = rowidMap.get(j);  
+                    
+                    if (similarityLB[i][j]==similarityUB[i][j]) {
+                        similarityDistances[i][j] = similarityLB[i][j];
+                        similarityApproximate[i][j] = true;
+                        calculateDist = false;
+                    }
+                    if (similarityLB[i][j]<similarityUB[i][j])  calculateDist = true;
+                    
+                    if (calculateDist){
+                            //System.out.println("confronto campi :  elemA["+i+"]["+rowidA+"], elemB["+j+"]["+rowidB+"]  similarity: "+similarityBase[i][j]);
+                            counter = 0; 
+                            if (ramLoad) {
+                                hashtableA = recordMap.get(rowidA);                
+                                hashtableB = recordMap.get(rowidB);
+                            }
+                            else {
+                                hashtableA = Cluster.getRecordByRowid(connection, rowidA);                
+                                hashtableB = Cluster.getRecordByRowid(connection, rowidB);
+                            }
+                            
+                            fieldsA = hashtableA.keys();
+                            while(fieldsA.hasMoreElements()) {
+                                key = (String) fieldsA.nextElement();                       
+                                Object elemA = hashtableA.get(key);
+                                Object elemB = hashtableB.get(key);
+                                if (elemA.equals(elemB)){
+                                    counter++;
+                                }
+                            }
+                            dist = maxDist-counter;                            
+
+                            similarityDistances[i][j] = dist;                                        
+       
+                            similarityApproximate[i][j] = false;
+
+                           /*
+                            if (method.compareTo("OPTRET")==0&&i==1) {
+                                similarityUB[i][j] = dist;
+                                similarityLB[i][j] = dist;
+                            }*/
+
+
+                            if ((targetDist - dist)>=0){                                                        
+                                similarityCluster[i][j] = 1; 
+                                numberOfSimilarity++;
+                            }
+                            numeroCalcoli++;
+                            if(verbose&&verboseLocal) {
+                                System.out.println("[findSimilarity] CALC=YES");
+                            }
+                            
+                        }   
+                    }
+                }
+            }            
+        
+            
+        }
+        else {            
+            for (i = 1; i <= maxElem; i++ ) {
+            rowidA = rowidMap.get(i);            
+            for (j = 1 + i; j <= maxElem; j++ ) {
+                rowidB = rowidMap.get(j);                         
+                if(verbose&&verboseLocal) System.out.println("[findSimilarity]-->"+i+"  "+j);                
+                if (method.compareTo("OPT")==0){
+                    calculateDist = false;
+                    //ottimizzazione (se le distanze della riga 1 sono già state calcolate...
+                    if (i>1){                         
+                        // caso 1: verifico che d12 non sia approssimato...   
+                        
+                        if (!similarityApproximate[i-1][j-1]){
+                            
+                            LBDist = similarityDistances[i-1][j]-similarityDistances[i-1][j-1];                            
+                            // verifico se  d23 >= d13-d12>soglia
+                            if (LBDist > targetDist){                                
+                                similarityDistances[i][j] = LBDist;
+                                //similarityOptimized[j][i] = LBDist; 
+                                similarityApproximate [i][j] = true;
+                                if ((targetDist - LBDist)>=0){                                
+                                    similarityCluster[i][j] = 1;
+                                    numberOfSimilarity++;
+                                }
+                            }
+                            else {                                
+                                LBDist = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
+                                if (LBDist > targetDist && !similarityApproximate [i-1][j]){
+                                    similarityDistances[i][j] = LBDist; 
+                                    //similarityOptimized[j][i] = LBDist; 
+                                    similarityApproximate [i][j] = true;
+                                    if ((targetDist - LBDist)>=0){                                
+                                        similarityCluster[i][j] = 1;
+                                        numberOfSimilarity++;
+                                    }
+                                }                                
+                                else {
+                                    calculateDist = true;                          
+                                }                                
+                            }
+                            
+                        }
+                        else {
+                            if (!similarityApproximate[i-1][j]){
+                                LBDist = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
+                                if (LBDist > targetDist){
+                                    similarityDistances[i][j] = LBDist; 
+                                    //similarityOptimized[j][i] = LBDist; 
+                                    similarityApproximate [i][j] = true;
+                                    if ((targetDist - LBDist)>=0){                                
+                                        similarityCluster[i][j] = 1;
+                                        numberOfSimilarity++;
+                                    }
+                                }
+                                else {
+                                    calculateDist = true;
+                                }
+                            }
+                            else calculateDist = true;
+                        }
+                    }
+                    else {
+                        calculateDist = true;
+                    }                
+                }
+                                                                
+                if (calculateDist){
+                    //System.out.println("confronto campi :  elemA["+i+"]["+rowidA+"], elemB["+j+"]["+rowidB+"]  similarity: "+similarityBase[i][j]);
+                    counter = 0;  
+                    if (ramLoad) {
+                        hashtableA = recordMap.get(rowidA);                
+                        hashtableB = recordMap.get(rowidB);
+                    }
+                    else {
+                        hashtableA = Cluster.getRecordByRowid(connection, rowidA);                
+                        hashtableB = Cluster.getRecordByRowid(connection, rowidB);
+                    }
+                    
+                    maxDist = hashtableA.size();
+                    fieldsA = hashtableA.keys();
+                    while(fieldsA.hasMoreElements()) {
+                        key = (String) fieldsA.nextElement();                       
+                        Object elemA = hashtableA.get(key);
+                        Object elemB = hashtableB.get(key);
+                        if (elemA.equals(elemB)){
+                            counter++;
+                        }
+                    }
+                    dist = maxDist-counter;                            
+                                          
+                    similarityDistances[i][j] = dist;                                        
+                    //similarityOptimized[j][i] = dist; 
+                    similarityApproximate[i][j] = false;
+                    /*
+                    if (method.compareTo("OPTRET")==0&&i==1) {
+                        similarityUB[i][j] = dist;
+                        similarityLB[i][j] = dist;
+                    }*/
+                    
+                                                  
+                    if ((targetDist - dist)>=0){                                                        
+                        similarityCluster[i][j] = 1; 
+                        numberOfSimilarity++;
+                    }
+                    numeroCalcoli++;
+                    if(verbose&&verboseLocal) System.out.println("[findSimilarity] CALC=YES");
+                }
+                else  {
+                    if(verbose&&verboseLocal) System.out.println("[findSimilarity] CALC=NO");
+                }
+            }            
+        }                        
     }
+
+        
+
+        if (method.compareTo("BASE")==0)    printResults(connection, "BASE, NO OPTIMIZATION",  similarityDistances,   similarityCluster ,  maxElem,  numeroCalcoli, numberOfSimilarity );
+        if (method.compareTo("OPT")==0)     printResults(connection, "PARTIAL (UPPER BOUND ONLY)",  similarityDistances,   similarityCluster ,  maxElem,  numeroCalcoli, numberOfSimilarity );
+        if (method.compareTo("OPTRET")==0) {
+            //printMatrix(similarityApproximate, maxElem, "LATE CALC METHOD (LB+UB)");
+            printMatrix(similarityLB, maxElem, "LATE CALC METHOD - LB VALUE MATRIX");
+            printMatrix(similarityUB, maxElem, "LATE CALC METHOD - UB VALUE MATRIX");        
+            printResults(connection, "LATE CALC OPTIMIZATION - MATRIX DISTANCE",    similarityDistances,   similarityCluster ,  maxElem,  numeroCalcoli, numberOfSimilarity );
+        }
+        
+        
+        return similarityDistances;
+    }
+       
+
+        
+    
+    // printResults : stampa risultati, caso ramLoad = TRUE;   
+
+    public static void printResults(Connection connection, String methodTitle,  int similarityDistances[][], int similarityCluster [][], int maxElem, int numeroCalcoli, int numberOfSimilarity ) throws SQLException {    
+        
+        int i, j;
+
+        printMatrix(similarityDistances, maxElem, methodTitle);
+        printMatrix(similarityCluster, maxElem, methodTitle);
+
+    
+
+        System.out.println("[findSimilarity] ---------------------------------");
+        System.out.println("[findSimilarity] Cluster :");
+        System.out.println("[findSimilarity] ---------------------------------");
+        for (i = 1; i <= maxElem; i++ ) {                      
+            for (j = 1 + i; j <= maxElem; j++ ) {     
+                if (similarityCluster[i][j] == 1){
+                    if (ramLoad){
+                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(i)+ " val: "+recordMap.get(rowidMap.get(i)).toString());
+                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(j)+ " val: "+recordMap.get(rowidMap.get(j)).toString());
+                    }
+                    else {
+                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(i)+ " val: "+Cluster.getRecordByRowid(connection, rowidMap.get(i)));
+                        System.out.println("[findSimilarity] i,j: "+i+","+j+"rowid: "+rowidMap.get(j)+ " val: "+Cluster.getRecordByRowid(connection, rowidMap.get(i)));
+                        
+                    }
+                    //System.out.println(recordMap.get(rowidMap.get(i)).toString());
+                    //System.out.println(recordMap.get(rowidMap.get(j)).toString());
+                }
+            }
+            //System.out.println();
+        }
+
+        System.out.println("[findSimilarity] ---------------------------------");
+        System.out.println("[findSimilarity] N. of calc.: "+numeroCalcoli);
+        System.out.println("[findSimilarity] ---------------------------------");
+        System.out.println("[findSimilarity] ---------------------------------");
+        System.out.println("[findSimilarity] N. of sim.: "+numberOfSimilarity);
+        System.out.println("[findSimilarity] ---------------------------------");
+        System.out.println("[findSimilarity] ====================================");
+        System.out.println("[findSimilarity] *** A P P    P A R A M E T E R S ***");
+        System.out.println("[findSimilarity] ->  targetDist: "+targetDist);
+        System.out.println("[findSimilarity] ->  ramLoad   : "+ramLoad);
+        System.out.println("[findSimilarity] ->  verbose   : "+verbose);
+        System.out.println("[findSimilarity] ->  numrow    : "+numrow);
+        System.out.println("[findSimilarity] ->  method    : "+method);
+        System.out.println("[findSimilarity] =====================================");
+        
+    }
+    
+
+
+
+    
+/*========================================================================================*/
+/*========================================================================================*/
     
     private static void updateDbStructure(TreeMap<String, Integer> dict, Connection connection, String destTable, String source) throws SQLException {               
         
@@ -1055,56 +1019,11 @@ public class Cluster {
             
         
 
-    public static ArrayList<String> createCampiCluster(Connection connection, Boolean verbose) throws SQLException {
-        // popolamento indice (hasmmap locale)
-
-        ArrayList<String> campiCluster = new ArrayList<String>();
-        String selectTableSQL = "select rowid, DENOMINAZIONE from ANAGAMB_V_GAU_ARPA";
-        campiCluster = addCampiCluster(campiCluster, connection, selectTableSQL, verbose);               
-        
-        return campiCluster;
-        
-
-    }
+   
     
     
     
-    private static ArrayList<String> addCampiCluster(ArrayList<String> campiCluster, Connection connection, String selectTableSQL, Boolean verbose) throws SQLException {               
-        try {
-            Statement statement = connection.createStatement();
-            System.out.println(selectTableSQL);
-            // esegue lo statement SQL 
-            ResultSet rs = statement.executeQuery(selectTableSQL);
-            //inizializzo strutture per indice keyword sentimento (dizionario)...
-            //TreeMap<String, Integer> dictKeywordSetWithOccurrences = new TreeMap<String, Integer>();
-            while (rs.next()) {
-                //String id = rs.getString("ID");
-                String rowid = rs.getString("ROWID");
-                if (verbose){
-                    //System.out.println("id : " + id);
-                    System.out.println("rowid : " + rowid);
-                }                                      
-                /*
-                implementazione stemmer, non utilizzato:
-                Stemmer s = new Stemmer();   
-                String stemma = s.stem(word);
-                if (verbose){
-                    System.out.println("Lemma stemmizzato: "+stemma);            
-                    System.out.println("-----------------------------------------");
-                    System.out.println("[addLexiconSourcesToDictKeywordSetWithOccurrences]:");
-                }*/
-                campiCluster.add(rowid);                 
-            }
-            //System.out.println("Indice anger da dizionario: " + dict.toString());        
-        } catch (SQLException e) {
-            System.out.println(e.getMessage());                  
-        } finally {      
-            if (statement != null) {
-                statement.close();
-            }      
-        }  
-        return campiCluster;
-    }
+    
 
 
 
