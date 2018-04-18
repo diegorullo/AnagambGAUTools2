@@ -693,7 +693,9 @@ public class Cluster {
                                                 // verifico se  d23 >= d13-d12>soglia
                                                 if (LBDist > targetDist){                                
                                                     similarityDistances[i][j] = LBDist;
-                                                    //similarityOptimized[j][i] = LBDist; 
+                                                    // se migliore, aggiorno LB
+                                                    if (LBDist>similarityLB[i][j]) similarityLB[i][j] = LBDist;
+                                                                                                        
                                                     similarityApproximate [i][j] = true;
                                                     if ((targetDist - LBDist)>=0){                                
                                                         similarityCluster[i][j] = 1;
@@ -705,7 +707,10 @@ public class Cluster {
                                                     LBDist = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
                                                     if (LBDist > targetDist && !similarityApproximate [i-1][j]){
                                                         similarityDistances[i][j] = LBDist; 
-                                                        //similarityOptimized[j][i] = LBDist; 
+                                                        
+                                                        // se migliore, aggiorno LB
+                                                        if (LBDist>similarityLB[i][j]) similarityLB[i][j] = LBDist;
+                                                        
                                                         similarityApproximate [i][j] = true;
                                                         if ((targetDist - LBDist)>=0){                                
                                                             similarityCluster[i][j] = 1;
@@ -723,8 +728,10 @@ public class Cluster {
                                                 if (!similarityApproximate[i-1][j]){
                                                     LBDist = similarityDistances[i-1][j-1]-similarityDistances[i-1][j];
                                                     if (LBDist > targetDist){
-                                                        similarityDistances[i][j] = LBDist; 
-                                                        //similarityOptimized[j][i] = LBDist; 
+                                                        similarityDistances[i][j] = LBDist;                                                         
+                                                        // se migliore, aggiorno LB
+                                                        if (LBDist>similarityLB[i][j]) similarityLB[i][j] = LBDist;
+                                                        
                                                         similarityApproximate [i][j] = true;
                                                         if ((targetDist - LBDist)>=0){                                
                                                             similarityCluster[i][j] = 1;
